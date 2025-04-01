@@ -1,71 +1,96 @@
 const axios = require("axios");
-const { sequelize } = require('./config/db');
-const _ = require("lodash"); // Instalar con: npm install lodash
+const { adGroupsListSP, adGroupsListSB } = require("./service/groups");
+const { campaignsListSB, campaignsListSP } = require("./service/campaign")
+const { portfoliosList } = require("./service/portafolio")
+const { productsAdsSP } = require("./service/asins")
 require("dotenv").config();
+const _ = require("lodash");
 
-let lastResponse = null; // Guardará la respuesta anterior
+let lastResponse = null;
 
-const campaignsAndAdGroups = async () => {
-    const results = await sequelize.query(
-        `SELECT campaigns.campaign_id AS campaignId, campaigns.name AS campaignName, 
-                sponsored_type.name AS sponsoredType, campaigns.state AS campaignState, 
-                ad_groups.ad_group_id AS adGroupId, ad_groups.name AS adGroupName, 
-                ad_groups.state AS adGroupState 
-         FROM ad_groups 
-         INNER JOIN campaigns ON ad_groups.campaigns_id = campaigns.id 
-         INNER JOIN sponsored_type ON campaigns.sponsored_type_id = sponsored_type.id`
-    );
+function mergeCampaignsWithASIN(campaigns, productos){
+    return productos.map(producto => ({
+        ...producto,
+        campaigns: campaigns.filter(campaign => campaign.campaignId === producto.campaignId),
+    }));
+}
 
-    const rows = results[0];
+function mergeCampaignsWithPortafolios(portafolios, campaigns) {
+    return portafolios.map(portafolio => ({
+        ...portafolio,
+        campaigns: campaigns.filter(campaign => campaign.portfolioId === portafolio.portfolioId),
+    }));
+}
 
-    const groupedData = rows.reduce((acc, row) => {
-        const { campaignId, campaignName, sponsoredType, campaignState, adGroupId, adGroupName, adGroupState } = row;
+function mergeCampaignsWithAdGroups(campaigns, adGroups) {
+    return campaigns.map(campaign => ({
+        ...campaign,
+        adGroups: adGroups.filter(adGroup => adGroup.campaignId === campaign.campaignId),
+    }));
+}
 
-        if (!acc[campaignId]) {
-            acc[campaignId] = {
-                campaignId,
-                campaignName,
-                sponsoredType,
-                campaignState,
-                adGroups: []
-            };
-        }
+async function getData() {
+    const [adGroupsData, campaignsData, portafoliosData, productosData] = await Promise.all([
+        adGroupsListSP(),
+        campaignsListSP(),
+        portfoliosList(),
+        productsAdsSP(),
+    ]);
 
-        acc[campaignId].adGroups.push({
-            adGroupId,
-            adGroupName,
-            adGroupState
-        });
+    const campaignsMerge = mergeCampaignsWithAdGroups(campaignsData.campaigns, adGroupsData.adGroups);
+    const portafoliosMerge = mergeCampaignsWithPortafolios(portafoliosData.portfolios, campaignsMerge)
+    const productosMerge = mergeCampaignsWithASIN(campaignsData.campaigns, productosData.productAds)
 
-        return acc;
-    }, {});
+    return {
+        campaigns: campaignsMerge,
+        adgroups: adGroupsData.adGroups,
+        portfolios: portafoliosMerge,
+        productos: productosMerge
+    }
+}
 
-    return Object.values(groupedData);
-};
+function findDifferences(obj1, obj2) {
+    return {
+        campaigns: _.differenceWith(obj1.campaigns, obj2.campaigns, _.isEqual),
+        adgroups: _.differenceWith(obj1.adgroups, obj2.adgroups, _.isEqual),
+        portfolios: _.differenceWith(obj1.portfolios, obj2.portfolios, _.isEqual)
+    };
+}
 
+// 🟡 Función para revisar cambios en la BD
 async function checkForChanges() {
     try {
-        const response = await campaignsAndAdGroups();        
+        const response = await getData();
 
-        if (lastResponse && !_.isEqual(lastResponse, response)) {  // ✅ Usa comparación profunda
-            console.log("🔔 Cambio detectado, notificando al servidor...");
-            await notifyServer();
+        if (lastResponse) {
+            const differences = findDifferences(response, lastResponse);
+
+            if (differences.campaigns.length || differences.adgroups.length || differences.portfolios.length) {
+                console.log("🔍 Diferencias detectadas:", JSON.stringify(differences, null, 2));
+                console.log("🔔 Cambio detectado, notificando al servidor...");
+                await notifyServer();
+            }
         }
-        lastResponse = response; // ✅ Guarda el objeto sin convertir a JSON
-        console.log("Consulta realizada.");
+
+        lastResponse = response;
+
     } catch (error) {
         console.error("❌ Error al consultar la API:", error.message);
     }
 }
 
 
-async function notifyServer(currentData) {
+// 🔴 Notificar al servidor si hay cambios
+async function notifyServer() {
     try {
-        await axios.post(process.env.SERVER_URL, { mensaje: "Cambio detectado en la API" });
-        console.log("Notificación enviada con éxito.");
+        await axios.post(process.env.SERVER_URL, {
+            mensaje: "Cambio detectado en la API",
+        });
+        console.log("✅ Notificación enviada.");
     } catch (error) {
-        console.error("Error al notificar al servidor:", error.message);
+        console.error("⚠️ Error al notificar al servidor:", error.message);
     }
 }
 
+// ⏳ Ejecutar funciones en intervalos
 setInterval(checkForChanges, 2000);
