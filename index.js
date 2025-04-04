@@ -1,10 +1,17 @@
-const axios = require("axios");
 const { adGroupsListSP, adGroupsListSB } = require("./service/groups");
 const { campaignsListSB, campaignsListSP } = require("./service/campaign")
 const { portfoliosList } = require("./service/portafolio")
 const { productsAdsSP } = require("./service/asins")
-require("dotenv").config();
+const express = require("express");
+const axios = require("axios");
 const _ = require("lodash");
+const app = express()
+
+
+require("dotenv").config();
+
+const PORT = process.env.PORT || 5000;
+const server = app.listen(PORT, () => console.log("BOT escuchando..."))
 
 let lastResponse = null;
 
@@ -22,28 +29,36 @@ function mergeCampaignsWithPortafolios(portafolios, campaigns) {
     }));
 }
 
-function mergeCampaignsWithAdGroups(campaigns, adGroups) {
+function mergeCampaignsWithAdGroups(campaigns, adGroups, type) {
     return campaigns.map(campaign => ({
         ...campaign,
+        type: type,
         adGroups: adGroups.filter(adGroup => adGroup.campaignId === campaign.campaignId),
     }));
 }
 
 async function getData() {
-    const [adGroupsData, campaignsData, portafoliosData, productosData] = await Promise.all([
+    const [adGroupsDataSP, adGroupsDataSB, campaignsDataSP, campaignsDataSB, portafoliosData, productosData] = await Promise.all([
         adGroupsListSP(),
+        adGroupsListSB(),
         campaignsListSP(),
+        campaignsListSB(),
         portfoliosList(),
         productsAdsSP(),
     ]);
 
-    const campaignsMerge = mergeCampaignsWithAdGroups(campaignsData.campaigns, adGroupsData.adGroups);
-    const portafoliosMerge = mergeCampaignsWithPortafolios(portafoliosData.portfolios, campaignsMerge)
-    const productosMerge = mergeCampaignsWithASIN(campaignsData.campaigns, productosData.productAds)
+    const campaignsMergeSP = mergeCampaignsWithAdGroups(campaignsDataSP.campaigns, adGroupsDataSP.adGroups, "SP");
+    const campaignsMergeSB = mergeCampaignsWithAdGroups(campaignsDataSB.campaigns, adGroupsDataSB.adGroups, "SB");
+
+    const campaignsData = [...campaignsMergeSB, ...campaignsMergeSP]
+    const adGroupsData = [...adGroupsDataSP.adGroups, ...adGroupsDataSB.adGroups]
+
+    const portafoliosMerge = mergeCampaignsWithPortafolios(portafoliosData.portfolios, campaignsData)
+    const productosMerge = mergeCampaignsWithASIN(campaignsData, productosData.productAds)
 
     return {
-        campaigns: campaignsMerge,
-        adgroups: adGroupsData.adGroups,
+        campaigns: campaignsData,
+        adgroups: adGroupsData,
         portfolios: portafoliosMerge,
         productos: productosMerge
     }

@@ -40,10 +40,12 @@ const campaignsListSB = async (body = null) => {
 
     //configuración de los headers y URL
 
+    const accessToken = await amazonAdsConfig.getValidAccessToken();
+
     const headers = {
         "Authorization": `Bearer ${accessToken}`,
-        "Amazon-Advertising-API-ClientId": clientId,
-        "Amazon-Advertising-API-Scope": profileId,
+        "Amazon-Advertising-API-ClientId": amazonAdsConfig.clientId,
+        "Amazon-Advertising-API-Scope": amazonAdsConfig.profileId,
         "Content-Type": "application/vnd.sbcampaignresource.v4+json",
         "Accept": "application/vnd.sbcampaignresource.v4+json"
     };
