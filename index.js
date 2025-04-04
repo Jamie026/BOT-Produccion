@@ -5,12 +5,14 @@ const { productsAdsSP } = require("./service/asins")
 const express = require("express");
 const axios = require("axios");
 const _ = require("lodash");
-const app = express()
-
+const cors = require("cors");
+const app = express();
 
 require("dotenv").config();
 
 const PORT = process.env.PORT || 5000;
+
+app.use(cors())
 
 app.get("/", (req, res) => {
     console.log("Cliente conectado");
