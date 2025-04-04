@@ -11,6 +11,12 @@ const app = express()
 require("dotenv").config();
 
 const PORT = process.env.PORT || 5000;
+
+app.get("/", (req, res) => {
+    console.log("Cliente conectado");
+    res.status(200).json({ message: "Ok" })
+})
+
 const server = app.listen(PORT, () => console.log("BOT escuchando..."))
 
 let lastResponse = null;
@@ -93,7 +99,6 @@ async function checkForChanges() {
         console.error("❌ Error al consultar la API:", error.message);
     }
 }
-
 
 // 🔴 Notificar al servidor si hay cambios
 async function notifyServer() {
